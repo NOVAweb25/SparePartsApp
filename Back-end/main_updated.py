@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Request, UploadFile, File, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from fastapi_users import FastAPIUsers, BaseUserManager
+from fastapi_users import FastAPIUsers
 from fastapi_users.authentication import BearerTransport, JWTStrategy, AuthenticationBackend
 from pymongo import MongoClient
 from datetime import datetime, timedelta
@@ -162,25 +162,6 @@ class MongoDBUserDatabase:
     async def delete(self, user: User) -> None:
         self.collection.delete_one({"_id": ObjectId(user.id)})
 
-# تعريف UserManager
-class UserManager(BaseUserManager[User, str]):
-    reset_password_token_secret = os.getenv("SECRET_KEY", "your-secret-key")
-    verification_token_secret = os.getenv("SECRET_KEY", "your-secret-key")
-
-    async def on_after_register(self, user: User, request: Optional[Request] = None):
-        print(f"User {user.id} has registered.")
-
-    def parse_id(self, value: str) -> str:
-        return value  # بما أن user_id هو str، نرجعه كما هو
-
-# دالة للحصول على user_db كـ dependency
-async def get_user_db():
-    return MongoDBUserDatabase()
-
-# دالة للحصول على user_manager
-async def get_user_manager(user_db=Depends(get_user_db)):
-    return UserManager(user_db)
-
 # إعداد الأمان باستخدام fastapi-users و JWT
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key")
 ALGORITHM = "HS256"
@@ -197,9 +178,8 @@ auth_backend = AuthenticationBackend(
     get_strategy=get_jwt_strategy,
 )
 
-# إعداد fastapi-users مع UserManager
 fastapi_users = FastAPIUsers[User, str](
-    get_user_manager,
+    lambda: MongoDBUserDatabase(),
     [auth_backend],
 )
 
@@ -350,8 +330,8 @@ async def manual_login(form_data: OAuth2PasswordRequestForm = Depends()):
         }
         user = User(**user_data)
         print(f"User object created: {user}")
-        print(f"User type after creation: {type(user)}")
-        print(f"User ID from user_data: {user_data['id']}")
+        print(f"User type after creation: {type(user)}")  # سجل لمعرفة نوع user
+        print(f"User ID from user_data: {user_data['id']}")  # سجل للتأكد من قيمة user_data["id"]
 
         # إنشاء الـ Token باستخدام user_data["id"] مباشرة
         print("Creating JWT token")
@@ -374,7 +354,8 @@ async def manual_login(form_data: OAuth2PasswordRequestForm = Depends()):
     except Exception as e:
         print(f"Unexpected error in manual_login: {str(e)}")
         error_detail = str(e) if str(e) else "Unknown error occurred"
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {error_detail}")
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {error_detail}"))
+
 # مسار تسجيل مستخدم جديد (إزالة التكرار)
 @app.post("/auth/register")
 async def register_user(user_data: dict):
@@ -470,6 +451,7 @@ async def upload_image(file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, buffer)
     return {"image_url": f"/uploads/{file_name}"}
 
+# مسار لإضافة منتج جديد مع صورة
 @app.post("/products/add")
 async def add_product(
     name: str,
@@ -479,7 +461,7 @@ async def add_product(
     category: str,
     brand: str,
     specifications: str,
-    image: UploadFile = File(None),  # تم تعديله ليكون اختياريًا
+    image: UploadFile = File(...),
     current_user: User = Depends(current_active_user)
 ):
     if not current_user.is_superuser:
@@ -490,15 +472,11 @@ async def add_product(
     except json.JSONDecodeError:
         raise HTTPException(status_code=422, detail="Invalid specifications format. It should be a valid JSON string.")
 
-    # التعامل مع الصورة (إذا وُجدت)
-    image_url = None
-    if image:
-        file_extension = image.filename.split('.')[-1]
-        file_name = f"{datetime.utcnow().timestamp()}.{file_extension}"
-        file_path = UPLOAD_DIR / file_name
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(image.file, buffer)
-        image_url = f"/uploads/{file_name}"
+    file_extension = image.filename.split('.')[-1]
+    file_name = f"{datetime.utcnow().timestamp()}.{file_extension}"
+    file_path = UPLOAD_DIR / file_name
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(image.file, buffer)
 
     product_dict = {
         "name": name,
@@ -508,7 +486,7 @@ async def add_product(
         "category": category,
         "brand": brand,
         "specifications": specifications_dict,
-        "image_url": image_url,  # سيتم تعيينه إلى None إذا لم تُرفع صورة
+        "image_url": f"/uploads/{file_name}",
         "trending_score": 0,
         "created_at": datetime.utcnow().isoformat(),
         "is_hidden": False
@@ -1367,75 +1345,6 @@ async def remove_from_favorites(product_id: str, current_user: User = Depends(cu
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Favorite item not found")
     return {"message": "Product removed from favorites successfully"}
-
-# إدارة الاشتراكات (Subscriptions)
-@app.get("/api/subscriptions")
-async def get_subscriptions(current_user: User = Depends(current_active_user)):
-    if not current_user.is_superuser:
-        raise HTTPException(status_code=403, detail="Only admins can view subscriptions")
-    subscriptions = list(users_collection.find({"subscription": {"$ne": None}}, {"_id": 0}))
-    subscriptions_list = [
-        {
-            "id": str(i),
-            "userId": user["id"],
-            "status": "active" if user["subscription"] else "paused",
-            "lastOrderDate": user["purchase_history"][-1]["created_at"] if user["purchase_history"] else None,
-            "preferredProducts": user.get("preferred_products", [])
-        }
-        for i, user in enumerate(subscriptions)
-    ]
-    return subscriptions_list
-
-@app.post("/api/subscriptions")
-async def add_subscription(user_id: str, current_user: User = Depends(current_active_user)):
-    if not current_user.is_superuser:
-        raise HTTPException(status_code=403, detail="Only admins can add subscriptions")
-    user = users_collection.find_one({"id": user_id})
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    users_collection.update_one(
-        {"id": user_id},
-        {"$set": {"subscription": True, "preferred_products": []}}
-    )
-    subscription = {
-        "id": str(user_id),
-        "userId": user_id,
-        "status": "active",
-        "lastOrderDate": user["purchase_history"][-1]["created_at"] if user["purchase_history"] else None,
-        "preferredProducts": []
-    }
-    return subscription
-
-@app.put("/api/subscriptions/{id}")
-async def update_subscription(id: str, status: str, last_order_date: Optional[str] = None, preferred_products: Optional[List[str]] = None, current_user: User = Depends(current_active_user)):
-    if not current_user.is_superuser:
-        raise HTTPException(status_code=403, detail="Only admins can update subscriptions")
-    user = users_collection.find_one({"id": id})
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    update_data = {}
-    if status:
-        update_data["subscription"] = (status == "active")
-    if last_order_date:
-        update_data["last_order_date"] = last_order_date
-    if preferred_products:
-        update_data["preferred_products"] = preferred_products
-    
-    users_collection.update_one({"id": id}, {"$set": update_data})
-    return {"message": "Subscription updated successfully"}
-
-@app.delete("/api/subscriptions/{id}")
-async def delete_subscription(id: str, current_user: User = Depends(current_active_user)):
-    if not current_user.is_superuser:
-        raise HTTPException(status_code=403, detail="Only admins can delete subscriptions")
-    user = users_collection.find_one({"id": id})
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    users_collection.update_one({"id": id}, {"$set": {"subscription": False}})
-    return {"message": "Subscription deleted successfully"}
 
 # إدارة الاشتراكات (Subscriptions)
 @app.get("/api/subscriptions")
