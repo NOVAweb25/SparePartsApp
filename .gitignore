@@ -135,6 +135,8 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+myenv/
+Back-end/myenv/
 
 # Spyder project settings
 .spyderproject
@@ -189,3 +191,5 @@ build/
 # General
 *.log
 *.DS_Store
+*/desktop.ini
+Back-end/twilio_2FA_recovery_code.txt
