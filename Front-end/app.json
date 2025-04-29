@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "SparePartsAppExpo",
+    "slug": "SparePartsAppExpo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "jsEngine": "hermes",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.janaabdullh.SparePartsAppExpo",
+      "backgroundColor": "#ffffff"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "d9aa633c-a66d-4964-a80a-8a9bd5c04499"
+      }
+    },
+    "developmentClient": {
+      "silentLaunch": true
+    },
+    "plugins": [
+      "expo-dev-client",
+      [
+        "expo-system-ui",
+        {
+          "backgroundColor": "#ffffff"
+        }
+      ],
+      "expo-video",
+      "expo-av"
+    ]
+  }
+}
