@@ -743,56 +743,6 @@ async def create_shipment_with_aramex(order: Order):
     print(f"Creating shipment with Aramex for order: {order}")
     return {"status": "success", "tracking_number": "aramex_123"}
 
-@app.post("/orders/create")
-async def create_order(order: Order, current_user: User = Depends(current_active_user)):
-    if order.user_id != str(current_user.id):
-        raise HTTPException(status_code=403, detail="Not authorized to create this order")
-
-    order_dict = order.dict()
-    order_dict["created_at"] = datetime.utcnow().isoformat()
-
-    # تحديث المخزون
-    for product in order_dict["products"]:
-        product_id = product.get("product_id")
-        quantity = product.get("quantity")
-        db_product = products_collection.find_one({"_id": ObjectId(product_id)})
-        if not db_product or db_product["stock"] < quantity:
-            raise HTTPException(status_code=400, detail=f"Product {product_id} is out of stock")
-        products_collection.update_one(
-            {"_id": ObjectId(product_id)},
-            {"$inc": {"stock": -quantity, "trending_score": quantity}}
-        )
-
-    # معالجة الدفع
-    if order.payment_method == "Tamara":
-        payment_result = await process_payment_with_tamara(order)
-        order_dict["payment_id"] = payment_result["payment_id"]
-    elif order.payment_method == "Tabby":
-        payment_result = await process_payment_with_tabby(order)
-        order_dict["payment_id"] = payment_result["payment_id"]
-    elif order.payment_method == "CustomInstallment":
-        order_dict["payment_id"] = "custom_installment_" + str(order_dict["created_at"])
-    else:
-        order_dict["payment_id"] = "cash_on_delivery"
-
-    # معالجة التوصيل
-    if order.delivery_method == "SMSA":
-        shipment_result = await create_shipment_with_smsa(order)
-        order_dict["tracking_number"] = shipment_result["tracking_number"]
-    elif order.delivery_method == "Aramex":
-        shipment_result = await create_shipment_with_aramex(order)
-        order_dict["tracking_number"] = shipment_result["tracking_number"]
-    else:
-        order_dict["tracking_number"] = "site_pickup"
-
-    result = orders_collection.insert_one(order_dict)
-    order_dict["id"] = str(result.inserted_id)
-
-    users_collection.update_one(
-        {"id": order.user_id},
-        {"$push": {"purchase_history": order_dict}}
-    )
-    return {"message": "Order created successfully", "order": order_dict}
 
 # مسار لعرض طلبات المستخدم
 @app.get("/orders")
@@ -1567,3 +1517,77 @@ async def get_last_order(user_id: str, current_user: User = Depends(current_acti
     if not orders:
         return {"lastOrderDate": None}
     return {"lastOrderDate": orders[0]["created_at"]}
+
+# مسارات لتحديث السلة
+@app.post("/api/cart/add")
+async def add_to_cart(product_id: str = Form(...), quantity: int = Form(...), current_user: User = Depends(current_active_user)):
+    product = products_collection.find_one({"_id": ObjectId(product_id)})
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    cart_item = {
+        "id": str(product["_id"]),
+        "name": product["name"],
+        "price": product["price"],
+        "image": product["image_url"],
+        "quantity": quantity,
+        "brand": product["brand"]
+    }
+    
+    users_collection.update_one(
+        {"id": current_user.id},
+        {"$push": {"cart": cart_item}},
+        upsert=True
+    )
+    return {"message": "Product added to cart successfully"}
+
+@app.put("/api/cart/update/{item_id}")
+async def update_cart_item(item_id: str, quantity: int = Form(...), current_user: User = Depends(current_active_user)):
+    result = users_collection.update_one(
+        {"id": current_user.id, "cart.id": item_id},
+        {"$set": {"cart.$.quantity": quantity}}
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Cart item not found")
+    return {"message": "Cart item updated successfully"}
+
+@app.delete("/api/cart/remove/{item_id}")
+async def remove_cart_item(item_id: str, current_user: User = Depends(current_active_user)):
+    result = users_collection.update_one(
+        {"id": current_user.id},
+        {"$pull": {"cart": {"id": item_id}}}
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Cart item not found")
+    return {"message": "Cart item removed successfully"}
+
+# مسارات لتحديث المفضلة
+@app.post("/api/favorites/add")
+async def add_to_favorites(product_id: str = Form(...), current_user: User = Depends(current_active_user)):
+    product = products_collection.find_one({"_id": ObjectId(product_id)})
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    favorite_item = {
+        "productId": str(product["_id"]),
+        "name": product["name"],
+        "price": product["price"],
+        "image": product["image_url"]
+    }
+    
+    users_collection.update_one(
+        {"id": current_user.id},
+        {"$push": {"favorites": favorite_item}},
+        upsert=True
+    )
+    return {"message": "Product added to favorites successfully"}
+
+@app.delete("/api/favorites/remove/{product_id}")
+async def remove_from_favorites(product_id: str, current_user: User = Depends(current_active_user)):
+    result = users_collection.update_one(
+        {"id": current_user.id},
+        {"$pull": {"favorites": {"productId": product_id}}}
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Favorite item not found")
+    return {"message": "Product removed from favorites successfully"}
