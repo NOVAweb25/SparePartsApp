@@ -32,7 +32,7 @@ const HomeScreen = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Trending Products</Text>
+      <Text style={styles.title}>المنتجات الشائعة</Text>
       <FlatList
         data={trendingProducts}
         renderItem={({ item }) => (
@@ -44,7 +44,7 @@ const HomeScreen = ({ navigation }) => {
         keyExtractor={(item) => item.id}
         horizontal
       />
-      <Text style={styles.title}>All Products</Text>
+      <Text style={styles.title}>جميع المنتجات</Text>
       <FlatList
         data={products}
         renderItem={({ item }) => (
@@ -55,14 +55,15 @@ const HomeScreen = ({ navigation }) => {
         )}
         keyExtractor={(item) => item.id}
       />
-      <Button title="Go to Cart" onPress={() => navigation.navigate('Cart')} />
+      <Button title="الذهاب إلى السلة" onPress={() => navigation.navigate('Cart')} />
       <Button
-        title="Go to Orders"
+        title="الذهاب إلى الطلبات"
         onPress={() => navigation.navigate('Orders', { userId: navigation.getState().routes[0].params?.userId })}
       />
-      <Button title="Go to Favorites" onPress={() => navigation.navigate('Favorites')} />
-      <Button title="Go to Subscriptions" onPress={() => navigation.navigate('Subscriptions')} />
-      <Button title="Go to Maintenance" onPress={() => navigation.navigate('Maintenance')} />
+      <Button title="الذهاب إلى المفضلة" onPress={() => navigation.navigate('Favorites')} />
+      <Button title="الذهاب إلى الاشتراكات" onPress={() => navigation.navigate('Subscriptions')} />
+      <Button title="الذهاب إلى الصيانة" onPress={() => navigation.navigate('Maintenance')} />
+      <Button title="تسجيل الدخول" onPress={() => navigation.navigate('LoginScreen')} />
     </View>
   );
 };
