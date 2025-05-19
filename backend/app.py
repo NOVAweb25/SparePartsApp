@@ -66,6 +66,34 @@ except Exception as e:
     raise Exception(f"Failed to connect to MongoDB: {str(e)}")
 
 db = client["HeavyMachinery"]
+
+def create_admin_account():
+    admin_phone = "966594280079"
+    admin_password = "adminsecure123"
+    existing_admin = users_collection.find_one({"phoneNumber": admin_phone})
+    if not existing_admin:
+        print("Creating admin account...")
+        admin_data = {
+            "full_name": "Admin User",
+            "phoneNumber": admin_phone,
+            "hashed_password": pwd_context.hash(admin_password),
+            "is_active": True,
+            "is_superuser": True,
+            "subscription": False,
+            "purchase_history": [],
+            "cart": [],
+            "favorites": [],
+            "preferred_products": [],
+            "created_at": datetime.utcnow().isoformat()
+        }
+        result = users_collection.insert_one(admin_data)
+        print(f"Admin account created with ID: {result.inserted_id}")
+    else:
+        print("Admin account already exists")
+
+# استدعاء الدالة عند بدء التطبيق
+create_admin_account()
+
 products_collection = db["Products"]
 users_collection = db["Users"]
 orders_collection = db["Orders"]
@@ -380,14 +408,14 @@ async def manual_login(form_data: OAuth2PasswordRequestForm = Depends()):
       print("Failed to generate access token")
       raise HTTPException(status_code=500, detail="Failed to generate access token")
     print("Access token generated successfully")
-    user_type = "admin" if user.is_superuser else "customer"
-    return JSONResponse(content={
-      "access_token": access_token,
-      "token_type": "bearer",
-      "user_type": user_type,
-      "full_name": user.full_name,
-      "user_id": user.id
-    })
+  user_type = "admin" if user.is_superuser else "customer"
+return JSONResponse(content={
+    "access_token": access_token,
+    "token_type": "bearer",
+    "user_type": user_type,
+    "full_name": user.full_name,
+    "user_id": user.id
+})
   except HTTPException as he:
     print(f"HTTP Exception: {he.detail}")
     raise he
@@ -444,18 +472,10 @@ async def register_user(user_data: dict):
 # مسار مخصص لتسجيل مسؤول
 @app.post("/auth/register/admin")
 async def register_admin(user_data: dict):
-    required_fields = ["username", "password", "phoneNumber", "email"]
+    required_fields = ["full_name", "phoneNumber", "password"]
     for field in required_fields:
         if field not in user_data:
             raise HTTPException(status_code=400, detail=f"الحقل {field} مطلوب")
-
-    existing_user = users_collection.find_one({"username": user_data["username"]})
-    if existing_user:
-        raise HTTPException(status_code=400, detail="اسم المستخدم مستخدم بالفعل")
-
-    existing_email = users_collection.find_one({"email": user_data["email"]})
-    if existing_email:
-        raise HTTPException(status_code=400, detail="البريد الإلكتروني مستخدم بالفعل")
 
     existing_phone = users_collection.find_one({"phoneNumber": user_data["phoneNumber"]})
     if existing_phone:
@@ -463,11 +483,6 @@ async def register_admin(user_data: dict):
 
     user_data["hashed_password"] = pwd_context.hash(user_data["password"])
     user_data.pop("password")
-
-    existing_password = users_collection.find_one({"hashed_password": user_data["hashed_password"]})
-    if existing_password:
-        raise HTTPException(status_code=400, detail="كلمة المرور مستخدمة بالفعل")
-
     user_data["is_active"] = True
     user_data["is_superuser"] = True
     user_data["subscription"] = user_data.get("subscription", False)
@@ -481,10 +496,35 @@ async def register_admin(user_data: dict):
     user_data["id"] = str(result.inserted_id)
     return {"message": "تم إنشاء حساب المسؤول بنجاح", "user_id": str(result.inserted_id)}
 
+
 # مسار للتحقق من حالة تسجيل الدخول
 @app.get("/auth/check")
 async def check_user(current_user: User = Depends(current_active_user)):
     return {"user_id": current_user.id, "username": current_user.username}
+
+@app.post("/auth/create-admin")
+async def create_admin():
+    admin_phone = "966594280079"
+    admin_password = "adminsecure123"
+    existing_admin = users_collection.find_one({"phoneNumber": admin_phone})
+    if existing_admin:
+        raise HTTPException(status_code=400, detail="حساب المسؤول موجود بالفعل")
+    
+    admin_data = {
+        "full_name": "Admin User",
+        "phoneNumber": admin_phone,
+        "hashed_password": pwd_context.hash(admin_password),
+        "is_active": True,
+        "is_superuser": True,
+        "subscription": False,
+        "purchase_history": [],
+        "cart": [],
+        "favorites": [],
+        "preferred_products": [],
+        "created_at": datetime.utcnow().isoformat()
+    }
+    result = users_collection.insert_one(admin_data)
+    return {"message": "تم إنشاء حساب المسؤول بنجاح", "user_id": str(result.inserted_id)}
 
 # مسار لرفع الصور
 @app.post("/upload-image")
